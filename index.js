@@ -1,14 +1,14 @@
-const BbPromise = require('bluebird');
 const jwt = require('jsonwebtoken');
-const request = require('request');
-const _ = require('lodash');
+const axios = require('axios');
+// TODO: this module is also not being maintained and the code itself is kind of hacky 
+// we might want to bring the solution into this one and tidy it up a little
 const getPem = require('rsa-pem-from-mod-exp');
 
 const publicKeys = {};
 
 // Validate the jwt Token with the audience and the issuer
 const verifyJwt = function verifyJwt(jwtToken, publicKey, aud, iss) {
-  return new BbPromise(function (resolve, reject) {
+  return new Promise(function (resolve, reject) {
     jwt.verify(jwtToken, publicKey, { algorithms: ['RS256'], audience: aud, issuer: iss },
       function (error, decoded) {
         if (!error) {
@@ -23,27 +23,28 @@ const verifyJwt = function verifyJwt(jwtToken, publicKey, aud, iss) {
 // fetch publicKeys (mod and exp) from jwks_uri if there are no current kid matching
 const getPublicKeys = function getPublicKeys(JWK_URI, jwtKid) {
   if (hasPublicKey(jwtKid)) {
-    return new BbPromise(function (resolve, reject) {
+    return new Promise(function (resolve, _reject) {
       resolve(publicKeys);
     });
   } else {
-    return new BbPromise(function (resolve, reject) {
-      request(JWK_URI, function (error, response, body) {
-        if (!error && response.statusCode == 200) {
-          let keys = JSON.parse(body).keys;
-          updatePublicKeys(keys);
-          resolve(publicKeys);
-        } else {
-          reject(error)
-        }
-      });
+    return new Promise(function (resolve, reject) {
+      axios.get(JWK_URI).then(function(response) {
+        console.log(response);
+        let keys = JSON.parse(response).keys;
+        updatePublicKeys(keys);
+        resolve(publicKeys);
+      })
+      .catch(function(error) {
+        console.log(error);
+        reject(error)
+      })
     });
   }
 };
 
 // generate and cache the rsa public key from modulus exponent
 const updatePublicKeys = function (b2cKeys) {
-  _.forEach(b2cKeys, function (value) {
+  b2cKeys.forEach(function (value) {
     publicKeys[value.kid] = getPem(value.n, value.e)
   });
 };
@@ -64,7 +65,7 @@ const hasPublicKey = function (jwtKid) {
 
 // verify the jwtToken against the given configuration
 exports.verify = function (jwtToken, config) {
-  return new BbPromise(function (resolve, reject) {
+  return new Promise(function (resolve, reject) {
     let decoded = jwt.decode(jwtToken, { complete: true });
     if (!decoded) {
       reject('{ "status":"error", "message":"Error Decoding JWT Token" }');
